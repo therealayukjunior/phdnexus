@@ -45,7 +45,9 @@ export default function Feed() {
       try {
         const trendingFields = await fetchTrendingFields();
         if (trendingFields.length > 0) {
-          setAvailableFields(["All Fields", ...trendingFields]);
+          // Remove duplicates from trending fields
+          const uniqueFields = Array.from(new Set(["All Fields", ...trendingFields]));
+          setAvailableFields(uniqueFields);
         }
       } catch (error) {
         console.error("Error loading trending fields:", error);
@@ -193,9 +195,9 @@ export default function Feed() {
               Research Field
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {availableFields.map((field) => (
+              {availableFields.map((field, idx) => (
                 <button
-                  key={field}
+                  key={`field-${idx}-${field}`}
                   onClick={() => setSelectedField(field)}
                   style={{
                     padding: "8px 16px",
