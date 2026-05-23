@@ -1,27 +1,72 @@
 /*
  * PhDNexus Search — Global search across ideas, researchers, communities
  * Design: White canvas with dark search header
+ * Now powered by OpenAlex API for real research data
  */
-import { useState, useMemo } from "react";
-import { Search as SearchIcon, Lightbulb, Users, Globe } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Search as SearchIcon, Lightbulb, Users, Globe, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import IdeaCard from "@/components/IdeaCard";
 import { ideas, researchers, communities } from "@/lib/data";
+import { globalSearch, fetchCommunities } from "@/lib/dataFetcher";
+import type { Idea, Researcher, Community } from "@/lib/data";
 
 type SearchTab = "all" | "ideas" | "researchers" | "communities";
 
 export default function Search() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<SearchTab>("all");
+  const [loading, setLoading] = useState(false);
+  const [allIdeas, setAllIdeas] = useState<Idea[]>(ideas);
+  const [allResearchers, setAllResearchers] = useState<Researcher[]>(researchers);
+  const [allCommunities, setAllCommunities] = useState<Community[]>(communities);
+
+  // Load communities on mount
+  useEffect(() => {
+    const loadCommunities = async () => {
+      try {
+        const fetchedCommunities = await fetchCommunities();
+        if (fetchedCommunities.length > 0) {
+          setAllCommunities([...communities, ...fetchedCommunities]);
+        }
+      } catch (error) {
+        console.error("Error loading communities:", error);
+      }
+    };
+    loadCommunities();
+  }, []);
+
+  // Search OpenAlex when query changes
+  useEffect(() => {
+    if (query.trim().length > 2) {
+      setLoading(true);
+      const performSearch = async () => {
+        try {
+          const results = await globalSearch(query);
+          setAllIdeas([...ideas, ...results.ideas]);
+          setAllResearchers([...researchers, ...results.researchers]);
+        } catch (error) {
+          console.error("Error searching:", error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      performSearch();
+    } else {
+      setAllIdeas(ideas);
+      setAllResearchers(researchers);
+      setLoading(false);
+    }
+  }, [query]);
 
   const q = query.toLowerCase().trim();
 
   const matchedIdeas = useMemo(
     () =>
       q
-        ? ideas.filter(
+        ? allIdeas.filter(
             (i) =>
               i.title.toLowerCase().includes(q) ||
               i.abstract.toLowerCase().includes(q) ||
@@ -30,13 +75,13 @@ export default function Search() {
               i.author.name.toLowerCase().includes(q)
           )
         : [],
-    [q]
+    [q, allIdeas]
   );
 
   const matchedResearchers = useMemo(
     () =>
       q
-        ? researchers.filter(
+        ? allResearchers.filter(
             (r) =>
               r.name.toLowerCase().includes(q) ||
               r.field.toLowerCase().includes(q) ||
@@ -44,51 +89,33 @@ export default function Search() {
               r.bio.toLowerCase().includes(q)
           )
         : [],
-    [q]
+    [q, allResearchers]
   );
 
   const matchedCommunities = useMemo(
     () =>
       q
-        ? communities.filter(
+        ? allCommunities.filter(
             (c) =>
               c.name.toLowerCase().includes(q) ||
               c.field.toLowerCase().includes(q) ||
               c.description.toLowerCase().includes(q)
           )
         : [],
-    [q]
+    [q, allCommunities]
   );
 
   const totalResults = matchedIdeas.length + matchedResearchers.length + matchedCommunities.length;
 
-  const tabs: { value: SearchTab; label: string; count: number }[] = [
-    { value: "all", label: "All", count: totalResults },
-    { value: "ideas", label: "Ideas", count: matchedIdeas.length },
-    { value: "researchers", label: "Researchers", count: matchedResearchers.length },
-    { value: "communities", label: "Communities", count: matchedCommunities.length },
-  ];
-
-  const suggestedTerms = [
-    "machine learning", "climate change", "quantum", "neuroscience",
-    "CRISPR", "blockchain", "microbiome", "dark matter", "epigenetics",
-    "reinforcement learning",
-  ];
-
   return (
-    <div style={{ fontFamily: "Manrope, sans-serif", background: "#ffffff", minHeight: "100vh" }}>
+    <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
 
-      {/* Search Header — dark */}
-      <div style={{ background: "#000000", padding: "64px 0 0" }}>
+      {/* Search Header */}
+      <section style={{ background: "#000000", padding: "48px 0" }}>
         <div className="container">
-          <p className="overline" style={{ color: "#ffed00", marginBottom: 12 }}>
-            Global Search
-          </p>
-          <h1 className="display-lg" style={{ color: "#ffffff", marginBottom: 32 }}>
-            SEARCH
-            <br />
-            PHDNEXUS
+          <h1 style={{ fontSize: 48, fontWeight: 700, color: "#ffffff", marginBottom: 24 }}>
+            Search PhDNexus
           </h1>
 
           {/* Search Input */}
@@ -96,338 +123,244 @@ export default function Search() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 16,
+              gap: 12,
+              padding: "16px 20px",
               background: "#ffffff",
-              padding: "0 24px",
-              height: 64,
-              maxWidth: 720,
-              borderRadius: 2,
-              marginBottom: 32,
+              borderRadius: 8,
+              border: "2px solid #ffed00",
             }}
           >
-            <SearchIcon size={22} color="#8a8a8a" />
+            <SearchIcon size={20} color="#000000" />
             <input
               type="text"
-              placeholder="Search ideas, researchers, communities, topics..."
+              placeholder="Search ideas, researchers, topics..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
               style={{
+                flex: 1,
                 border: "none",
-                outline: "none",
-                fontSize: 18,
-                color: "#000000",
                 background: "transparent",
-                width: "100%",
+                fontSize: 16,
+                outline: "none",
                 fontFamily: "Manrope, sans-serif",
-                fontWeight: 400,
               }}
             />
-            {query && (
-              <button
-                onClick={() => setQuery("")}
-                style={{
-                  fontSize: 13,
-                  color: "#666666",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontFamily: "Manrope, sans-serif",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Clear
-              </button>
-            )}
+            {loading && <Loader2 className="animate-spin" size={20} color="#000000" />}
           </div>
-
-          {/* Tabs */}
-          {q && (
-            <div className="flex gap-2" style={{ paddingBottom: 0 }}>
-              {tabs.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => setTab(t.value)}
-                  style={{
-                    padding: "10px 20px",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: tab === t.value ? "#000000" : "rgba(255,255,255,0.72)",
-                    background: tab === t.value ? "#ffffff" : "transparent",
-                    border: "none",
-                    borderRadius: "2px 2px 0 0",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    transition: "all 150ms",
-                    fontFamily: "Manrope, sans-serif",
-                  }}
-                >
-                  {t.label}
-                  <span
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 6px",
-                      borderRadius: 46,
-                      background: tab === t.value ? "#000000" : "rgba(255,255,255,0.2)",
-                      color: tab === t.value ? "#ffffff" : "rgba(255,255,255,0.72)",
-                    }}
-                  >
-                    {t.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-      </div>
+      </section>
 
       {/* Results */}
-      <div className="container" style={{ padding: "48px 16px" }}>
-        {!q ? (
-          /* Empty state — suggestions */
-          <div>
-            <p className="overline" style={{ color: "#666666", marginBottom: 16 }}>
-              Suggested Topics
-            </p>
-            <div className="flex flex-wrap gap-2" style={{ marginBottom: 48 }}>
-              {suggestedTerms.map((term) => (
-                <button
-                  key={term}
-                  className="btn-pill"
-                  onClick={() => setQuery(term)}
-                >
-                  {term}
-                </button>
-              ))}
+      <section style={{ flex: 1, padding: "48px 0" }}>
+        <div className="container">
+          {!query.trim() ? (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <SearchIcon size={48} color="#e8e8e8" style={{ marginBottom: 16, margin: "0 auto 16px" }} />
+              <p style={{ fontSize: 18, fontWeight: 600, color: "#000000", marginBottom: 8 }}>
+                Start searching
+              </p>
+              <p style={{ fontSize: 14, color: "#999999" }}>
+                Enter at least 3 characters to search across ideas, researchers, and communities
+              </p>
             </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: 1,
-                background: "#f2f2f2",
-              }}
-            >
-              {[
-                { icon: <Lightbulb size={24} />, label: "Browse Ideas", count: ideas.length, href: "/feed" },
-                { icon: <Users size={24} />, label: "Find Researchers", count: researchers.length, href: "/communities" },
-                { icon: <Globe size={24} />, label: "Join Communities", count: communities.length, href: "/communities" },
-              ].map((item) => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  style={{ textDecoration: "none" }}
-                >
-                  <div
+          ) : loading ? (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 400 }}>
+              <Loader2 className="animate-spin" size={32} />
+            </div>
+          ) : totalResults === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <p style={{ fontSize: 18, fontWeight: 600, color: "#000000", marginBottom: 8 }}>
+                No results found
+              </p>
+              <p style={{ fontSize: 14, color: "#999999" }}>
+                Try different keywords or browse communities
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Tabs */}
+              <div style={{ display: "flex", gap: 24, borderBottom: "1px solid #e8e8e8", marginBottom: 32 }}>
+                {(["all", "ideas", "researchers", "communities"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
                     style={{
-                      background: "#ffffff",
-                      padding: 32,
-                      transition: "border-left-color 150ms, transform 200ms cubic-bezier(0.23,1,0.32,1)",
-                      borderLeft: "4px solid transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderLeftColor = "#ffed00";
-                      (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderLeftColor = "transparent";
-                      (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                      padding: "12px 0",
+                      borderBottom: tab === t ? "2px solid #000000" : "none",
+                      background: "transparent",
+                      border: "none",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: tab === t ? "#000000" : "#999999",
+                      cursor: "pointer",
+                      textTransform: "capitalize",
                     }}
                   >
-                    <div style={{ marginBottom: 16 }}>{item.icon}</div>
-                    <p style={{ fontSize: 28, fontWeight: 700, color: "#000000", lineHeight: 0.95, marginBottom: 8 }}>
-                      {item.count}
-                    </p>
-                    <p className="heading-sm" style={{ color: "#000000" }}>
-                      {item.label}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : totalResults === 0 ? (
-          <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <p className="heading-lg" style={{ color: "#000000", marginBottom: 12 }}>
-              No results for "{query}"
-            </p>
-            <p className="body-md" style={{ color: "#666666", marginBottom: 32 }}>
-              Try different keywords or browse by discipline
-            </p>
-            <Link href="/feed" className="btn-primary">
-              Browse All Ideas
-            </Link>
-          </div>
-        ) : (
-          <div>
-            <p className="body-sm" style={{ color: "#666666", marginBottom: 32 }}>
-              {totalResults} result{totalResults !== 1 ? "s" : ""} for "{query}"
-            </p>
+                    {t === "all" ? "All Results" : t}
+                    {tab === t && (
+                      <span style={{ marginLeft: 8, color: "#ffed00" }}>
+                        ({t === "all" ? totalResults : t === "ideas" ? matchedIdeas.length : t === "researchers" ? matchedResearchers.length : matchedCommunities.length})
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
 
-            {/* Ideas */}
-            {(tab === "all" || tab === "ideas") && matchedIdeas.length > 0 && (
-              <section style={{ marginBottom: 48 }}>
-                <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
-                  <p className="overline" style={{ color: "#666666" }}>
-                    Ideas ({matchedIdeas.length})
-                  </p>
+              {/* Ideas */}
+              {(tab === "all" || tab === "ideas") && matchedIdeas.length > 0 && (
+                <div style={{ marginBottom: 48 }}>
+                  {tab === "all" && (
+                    <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>
+                      <Lightbulb size={20} style={{ display: "inline", marginRight: 8 }} />
+                      Ideas ({matchedIdeas.length})
+                    </h2>
+                  )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                      gap: 24,
+                    }}
+                  >
+                    {(tab === "all" ? matchedIdeas.slice(0, 3) : matchedIdeas).map((idea) => (
+                      <IdeaCard key={idea.id} idea={idea} />
+                    ))}
+                  </div>
                   {tab === "all" && matchedIdeas.length > 3 && (
-                    <button
-                      className="btn-pill"
-                      onClick={() => setTab("ideas")}
-                    >
-                      View all {matchedIdeas.length}
-                    </button>
+                    <Link href="/feed" style={{ marginTop: 16, display: "inline-block" }}>
+                      <span style={{ color: "#000000", fontWeight: 600, textDecoration: "underline" }}>
+                        View all ideas →
+                      </span>
+                    </Link>
                   )}
                 </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-                    gap: 1,
-                    background: "#f2f2f2",
-                  }}
-                >
-                  {(tab === "all" ? matchedIdeas.slice(0, 3) : matchedIdeas).map((idea, i) => (
-                    <div key={idea.id} style={{ background: "#fff" }}>
-                      <IdeaCard idea={idea} index={i} />
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+              )}
 
-            {/* Researchers */}
-            {(tab === "all" || tab === "researchers") && matchedResearchers.length > 0 && (
-              <section style={{ marginBottom: 48 }}>
-                <p className="overline" style={{ color: "#666666", marginBottom: 20 }}>
-                  Researchers ({matchedResearchers.length})
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                    gap: 1,
-                    background: "#f2f2f2",
-                  }}
-                >
-                  {matchedResearchers.map((r) => (
-                    <Link key={r.id} href={`/profile/${r.id}`} style={{ textDecoration: "none" }}>
-                      <div
+              {/* Researchers */}
+              {(tab === "all" || tab === "researchers") && matchedResearchers.length > 0 && (
+                <div style={{ marginBottom: 48 }}>
+                  {tab === "all" && (
+                    <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>
+                      <Users size={20} style={{ display: "inline", marginRight: 8 }} />
+                      Researchers ({matchedResearchers.length})
+                    </h2>
+                  )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {(tab === "all" ? matchedResearchers.slice(0, 3) : matchedResearchers).map((researcher) => (
+                      <Link
+                        key={researcher.id}
+                        href={`/profile/${researcher.id}`}
                         style={{
-                          background: "#ffffff",
-                          padding: 24,
-                          transition: "border-left-color 150ms, transform 200ms cubic-bezier(0.23,1,0.32,1)",
-                          borderLeft: "4px solid transparent",
+                          padding: 20,
+                          background: "#f7f7f7",
+                          borderRadius: 6,
+                          textDecoration: "none",
+                          transition: "all 150ms",
+                          cursor: "pointer",
                         }}
                         onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLElement).style.borderLeftColor = "#ffed00";
-                          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                          (e.currentTarget as HTMLElement).style.background = "#eeeeee";
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLElement).style.borderLeftColor = "transparent";
-                          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                          (e.currentTarget as HTMLElement).style.background = "#f7f7f7";
                         }}
                       >
-                        <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "start" }}>
                           <div
                             style={{
-                              width: 44,
-                              height: 44,
-                              borderRadius: "50%",
-                              background: "#000000",
-                              color: "#ffffff",
+                              width: 48,
+                              height: 48,
+                              borderRadius: 4,
+                              background: researcher.avatarColor,
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              fontSize: 13,
+                              color: "#ffffff",
                               fontWeight: 700,
+                              fontSize: 14,
                               flexShrink: 0,
                             }}
                           >
-                            {r.avatar}
+                            {researcher.avatar}
                           </div>
-                          <div>
-                            <p style={{ fontSize: 15, fontWeight: 700, color: "#000000" }}>{r.name}</p>
-                            <p style={{ fontSize: 12, color: "#666666" }}>{r.field}</p>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "#000000", marginBottom: 4 }}>
+                              {researcher.name}
+                            </p>
+                            <p style={{ fontSize: 12, color: "#666666", marginBottom: 8 }}>
+                              {researcher.university}
+                            </p>
+                            <p style={{ fontSize: 11, color: "#999999" }}>
+                              {researcher.ideas} ideas • {researcher.citations} citations
+                            </p>
                           </div>
                         </div>
-                        <p className="body-sm" style={{ color: "#666666", marginBottom: 12, lineHeight: 1.5 }}>
-                          {r.bio.slice(0, 100)}...
-                        </p>
-                        <div className="flex items-center gap-3">
-                          <span style={{ fontSize: 12, color: "#333333", fontWeight: 600 }}>
-                            {r.university}
-                          </span>
-                          <span style={{ fontSize: 12, color: "#8a8a8a" }}>·</span>
-                          <span style={{ fontSize: 12, color: "#666666" }}>{r.country}</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </section>
-            )}
+              )}
 
-            {/* Communities */}
-            {(tab === "all" || tab === "communities") && matchedCommunities.length > 0 && (
-              <section>
-                <p className="overline" style={{ color: "#666666", marginBottom: 20 }}>
-                  Communities ({matchedCommunities.length})
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                    gap: 1,
-                    background: "#f2f2f2",
-                  }}
-                >
-                  {matchedCommunities.map((c) => (
-                    <Link key={c.id} href="/communities" style={{ textDecoration: "none" }}>
-                      <div
+              {/* Communities */}
+              {(tab === "all" || tab === "communities") && matchedCommunities.length > 0 && (
+                <div>
+                  {tab === "all" && (
+                    <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>
+                      <Globe size={20} style={{ display: "inline", marginRight: 8 }} />
+                      Communities ({matchedCommunities.length})
+                    </h2>
+                  )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {(tab === "all" ? matchedCommunities.slice(0, 3) : matchedCommunities).map((community) => (
+                      <Link
+                        key={community.id}
+                        href="/communities"
                         style={{
-                          background: "#ffffff",
-                          padding: 24,
-                          transition: "border-left-color 150ms, transform 200ms cubic-bezier(0.23,1,0.32,1)",
-                          borderLeft: "4px solid transparent",
+                          padding: 20,
+                          background: "#f7f7f7",
+                          borderRadius: 6,
+                          textDecoration: "none",
+                          transition: "all 150ms",
+                          cursor: "pointer",
                         }}
                         onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLElement).style.borderLeftColor = "#ffed00";
-                          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                          (e.currentTarget as HTMLElement).style.background = "#eeeeee";
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLElement).style.borderLeftColor = "transparent";
-                          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                          (e.currentTarget as HTMLElement).style.background = "#f7f7f7";
                         }}
                       >
-                        <span className="overline" style={{ color: "#666666", display: "block", marginBottom: 8 }}>
-                          {c.field}
-                        </span>
-                        <h3 className="heading-sm" style={{ color: "#000000", marginBottom: 8 }}>
-                          {c.name}
-                        </h3>
-                        <p className="body-sm" style={{ color: "#666666", marginBottom: 16, lineHeight: 1.5 }}>
-                          {c.description.slice(0, 100)}...
+                        <p style={{ fontSize: 14, fontWeight: 700, color: "#000000", marginBottom: 8 }}>
+                          {community.name}
                         </p>
-                        <div className="flex items-center gap-4">
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#000000" }}>
-                            {c.members.toLocaleString()}
-                          </span>
-                          <span style={{ fontSize: 12, color: "#666666" }}>members</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
+                        <p style={{ fontSize: 12, color: "#666666", marginBottom: 12 }}>
+                          {community.description}
+                        </p>
+                        <p style={{ fontSize: 11, color: "#999999" }}>
+                          {community.members} members • {community.ideas} ideas
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </section>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
 
       <Footer />
     </div>

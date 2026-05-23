@@ -2,14 +2,17 @@
  * PhDNexus Feed — Idea Browsing Page
  * Design: White catalogue mode with sub-nav pill filters
  * 3-column grid, discipline filters, status filters
+ * Now powered by OpenAlex API for real research data
  */
-import { useState, useMemo } from "react";
-import { Search, SlidersHorizontal, Plus } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Search, SlidersHorizontal, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import IdeaCard from "@/components/IdeaCard";
 import { ideas, fields } from "@/lib/data";
+import { fetchIdeasByField, fetchTrendingFields } from "@/lib/dataFetcher";
+import type { Idea } from "@/lib/data";
 
 const statusFilters = [
   { value: "all", label: "All Status" },
@@ -32,9 +35,51 @@ export default function Feed() {
   const [selectedSort, setSelectedSort] = useState("recent");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCollab, setShowCollab] = useState(false);
+  const [allIdeas, setAllIdeas] = useState<Idea[]>(ideas);
+  const [loading, setLoading] = useState(false);
+  const [availableFields, setAvailableFields] = useState(fields);
+
+  // Load trending fields from OpenAlex on mount
+  useEffect(() => {
+    const loadTrendingFields = async () => {
+      try {
+        const trendingFields = await fetchTrendingFields();
+        if (trendingFields.length > 0) {
+          setAvailableFields(["All Fields", ...trendingFields]);
+        }
+      } catch (error) {
+        console.error("Error loading trending fields:", error);
+      }
+    };
+    loadTrendingFields();
+  }, []);
+
+  // Load ideas when field changes
+  useEffect(() => {
+    if (selectedField !== "All Fields") {
+      setLoading(true);
+      const loadIdeas = async () => {
+        try {
+          const openAlexIdeas = await fetchIdeasByField(selectedField, 12);
+          if (openAlexIdeas.length > 0) {
+            setAllIdeas([...ideas, ...openAlexIdeas]);
+          }
+        } catch (error) {
+          console.error("Error loading ideas:", error);
+          toast.error("Failed to load ideas");
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadIdeas();
+    } else {
+      setAllIdeas(ideas);
+      setLoading(false);
+    }
+  }, [selectedField]);
 
   const filtered = useMemo(() => {
-    let result = [...ideas];
+    let result = [...allIdeas];
 
     if (selectedField !== "All Fields") {
       result = result.filter((i) => i.field === selectedField || i.subfield.includes(selectedField));
@@ -54,241 +99,250 @@ export default function Feed() {
         (i) =>
           i.title.toLowerCase().includes(q) ||
           i.abstract.toLowerCase().includes(q) ||
-          i.tags.some((t) => t.toLowerCase().includes(q)) ||
-          i.author.name.toLowerCase().includes(q)
+          i.tags.some((t) => t.toLowerCase().includes(q))
       );
     }
 
-    if (selectedSort === "upvotes") result.sort((a, b) => b.upvotes - a.upvotes);
-    else if (selectedSort === "comments") result.sort((a, b) => b.comments - a.comments);
-    else if (selectedSort === "collab") result = result.filter((i) => i.seekingCollaboration);
+    // Sort
+    if (selectedSort === "upvotes") {
+      result.sort((a, b) => b.upvotes - a.upvotes);
+    } else if (selectedSort === "comments") {
+      result.sort((a, b) => b.comments - a.comments);
+    } else if (selectedSort === "collab") {
+      result.sort((a, b) => (b.seekingCollaboration ? 1 : -1));
+    } else {
+      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
 
     return result;
-  }, [selectedField, selectedStatus, selectedSort, searchQuery, showCollab]);
+  }, [allIdeas, selectedField, selectedStatus, showCollab, searchQuery, selectedSort]);
 
   return (
-    <div style={{ fontFamily: "Manrope, sans-serif", background: "#ffffff", minHeight: "100vh" }}>
+    <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
 
-      {/* Page Header */}
-      <div style={{ background: "#000000", padding: "48px 0 0" }}>
+      {/* Hero */}
+      <section style={{ background: "#000000", padding: "48px 0", borderBottom: "1px solid #f2f2f2" }}>
         <div className="container">
-          <p className="overline" style={{ color: "#ffed00", marginBottom: 12 }}>
-            Research Ideas
+          <h1 style={{ fontSize: 48, fontWeight: 700, color: "#ffffff", marginBottom: 8 }}>
+            Explore Research Ideas
+          </h1>
+          <p style={{ fontSize: 16, color: "rgba(255,255,255,0.72)" }}>
+            Discover cutting-edge research across all disciplines, powered by OpenAlex
           </p>
-          <div className="flex items-end justify-between" style={{ paddingBottom: 32 }}>
-            <h1 className="display-lg" style={{ color: "#ffffff" }}>
-              EXPLORE
-              <br />
-              IDEAS
-            </h1>
-            <button
-              className="btn-primary"
-              onClick={() => toast("Sign in to share your research idea")}
-            >
-              <Plus size={16} />
-              Share Idea
-            </button>
-          </div>
-
-          {/* Sub-nav discipline pills */}
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              overflowX: "auto",
-              paddingBottom: 16,
-              scrollbarWidth: "none",
-            }}
-          >
-            {fields.map((field) => (
-              <button
-                key={field}
-                className={`btn-pill ${selectedField === field ? "active" : ""}`}
-                onClick={() => setSelectedField(field)}
-                style={{
-                  flexShrink: 0,
-                  background: selectedField === field ? "#ffed00" : "transparent",
-                  color: selectedField === field ? "#000000" : "rgba(255,255,255,0.72)",
-                  borderColor: selectedField === field ? "#ffed00" : "rgba(255,255,255,0.3)",
-                }}
-              >
-                {field}
-              </button>
-            ))}
-          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Filters Bar */}
-      <div
-        style={{
-          background: "#f7f7f7",
-          borderBottom: "1px solid #f2f2f2",
-          padding: "16px 0",
-          position: "sticky",
-          top: 60,
-          zIndex: 50,
-        }}
-      >
+      {/* Search Bar */}
+      <section style={{ background: "#ffffff", padding: "24px 0", borderBottom: "1px solid #f2f2f2" }}>
         <div className="container">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Search */}
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <div
               style={{
-                flex: "1 1 240px",
+                flex: 1,
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                background: "#ffffff",
-                border: "1px solid #f2f2f2",
-                padding: "0 16px",
-                height: 40,
-                borderRadius: 2,
+                gap: 12,
+                padding: "12px 16px",
+                background: "#f7f7f7",
+                borderRadius: 6,
+                border: "1px solid #e8e8e8",
               }}
             >
-              <Search size={16} color="#8a8a8a" />
+              <Search size={18} color="#999999" />
               <input
                 type="text"
-                placeholder="Search ideas, authors, tags..."
+                placeholder="Search ideas, topics, researchers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
+                  flex: 1,
                   border: "none",
-                  outline: "none",
-                  fontSize: 14,
-                  color: "#000000",
                   background: "transparent",
-                  width: "100%",
-                  fontFamily: "Manrope, sans-serif",
+                  fontSize: 14,
+                  outline: "none",
                 }}
               />
             </div>
-
-            {/* Status filter */}
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              style={{
-                height: 40,
-                padding: "0 12px",
-                border: "1px solid #f2f2f2",
-                borderRadius: 2,
-                fontSize: 13,
-                fontWeight: 600,
-                color: "#000000",
-                background: "#ffffff",
-                cursor: "pointer",
-                fontFamily: "Manrope, sans-serif",
-                outline: "none",
-              }}
-            >
-              {statusFilters.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Sort */}
-            <select
-              value={selectedSort}
-              onChange={(e) => setSelectedSort(e.target.value)}
-              style={{
-                height: 40,
-                padding: "0 12px",
-                border: "1px solid #f2f2f2",
-                borderRadius: 2,
-                fontSize: 13,
-                fontWeight: 600,
-                color: "#000000",
-                background: "#ffffff",
-                cursor: "pointer",
-                fontFamily: "Manrope, sans-serif",
-                outline: "none",
-              }}
-            >
-              {sortOptions.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Collab toggle */}
             <button
-              onClick={() => setShowCollab(!showCollab)}
+              onClick={() => toast.info("Advanced filters coming soon")}
               style={{
-                height: 40,
-                padding: "0 16px",
-                border: `1px solid ${showCollab ? "#000000" : "#f2f2f2"}`,
-                borderRadius: 2,
-                fontSize: 13,
-                fontWeight: 600,
-                color: showCollab ? "#ffffff" : "#000000",
-                background: showCollab ? "#000000" : "#ffffff",
+                padding: "12px 16px",
+                background: "#ffffff",
+                border: "1px solid #e8e8e8",
+                borderRadius: 6,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                transition: "all 150ms",
-                fontFamily: "Manrope, sans-serif",
+                gap: 8,
               }}
             >
-              <SlidersHorizontal size={14} />
-              Seeking Collaborators
+              <SlidersHorizontal size={18} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Filters</span>
             </button>
-
-            {/* Results count */}
-            <span style={{ fontSize: 13, color: "#666666", marginLeft: "auto" }}>
-              {filtered.length} idea{filtered.length !== 1 ? "s" : ""}
-            </span>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Filter Pills */}
+      <section style={{ background: "#ffffff", padding: "24px 0", borderBottom: "1px solid #f2f2f2" }}>
+        <div className="container">
+          {/* Field Filter */}
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#666666", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Research Field
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {availableFields.map((field) => (
+                <button
+                  key={field}
+                  onClick={() => setSelectedField(field)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    border: "1px solid #e8e8e8",
+                    background: selectedField === field ? "#000000" : "#ffffff",
+                    color: selectedField === field ? "#ffffff" : "#000000",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 150ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedField !== field) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#000000";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedField !== field) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#e8e8e8";
+                    }
+                  }}
+                >
+                  {field}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#666666", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Status
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {statusFilters.map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setSelectedStatus(filter.value)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    border: "1px solid #e8e8e8",
+                    background: selectedStatus === filter.value ? "#000000" : "#ffffff",
+                    color: selectedStatus === filter.value ? "#ffffff" : "#000000",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 150ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedStatus !== filter.value) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#000000";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedStatus !== filter.value) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#e8e8e8";
+                    }
+                  }}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sort & Toggle */}
+          <div style={{ display: "flex", gap: 16, justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "#666666", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Sort
+              </p>
+              {sortOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedSort(opt.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    border: selectedSort === opt.value ? "1px solid #000000" : "1px solid #e8e8e8",
+                    background: selectedSort === opt.value ? "#000000" : "#ffffff",
+                    color: selectedSort === opt.value ? "#ffffff" : "#000000",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowCollab(!showCollab)}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 4,
+                border: showCollab ? "2px solid #ffed00" : "1px solid #e8e8e8",
+                background: showCollab ? "rgba(255,237,0,0.1)" : "#ffffff",
+                color: "#000000",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              🤝 Seeking Collaboration
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Ideas Grid */}
-      <div className="section-white" style={{ paddingTop: 40 }}>
+      <section style={{ flex: 1, padding: "48px 0" }}>
         <div className="container">
-          {filtered.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "80px 0" }}>
-              <p className="heading-lg" style={{ color: "#000000", marginBottom: 12 }}>
+          {loading ? (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 400 }}>
+              <Loader2 className="animate-spin" size={32} />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <p style={{ fontSize: 18, fontWeight: 600, color: "#000000", marginBottom: 8 }}>
                 No ideas found
               </p>
-              <p className="body-md" style={{ color: "#666666" }}>
+              <p style={{ fontSize: 14, color: "#999999" }}>
                 Try adjusting your filters or search query
               </p>
             </div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-                gap: 1,
-                background: "#f2f2f2",
-              }}
-            >
-              {filtered.map((idea, i) => (
-                <div key={idea.id} style={{ background: "#fff" }}>
-                  <IdeaCard idea={idea} index={i} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Load more placeholder */}
-          {filtered.length > 0 && (
-            <div style={{ textAlign: "center", marginTop: 48 }}>
-              <button
-                className="btn-outline"
-                onClick={() => toast("More ideas loading — feature coming soon")}
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "#999999", marginBottom: 24, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                {filtered.length} Results
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                  gap: 24,
+                }}
               >
-                Load More Ideas
-              </button>
-            </div>
+                {filtered.map((idea) => (
+                  <IdeaCard key={idea.id} idea={idea} />
+                ))}
+              </div>
+            </>
           )}
         </div>
-      </div>
+      </section>
 
       <Footer />
     </div>

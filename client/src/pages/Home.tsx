@@ -3,12 +3,15 @@
  * Design: Scientific Precision
  * Sections: Hero (dark) → Stats (white) → Featured Ideas (white) → Collab CTA (dark) → Communities (soft) → Join CTA (yellow) → Footer (dark)
  */
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, Globe, Lightbulb, Users, BookOpen, ChevronRight } from "lucide-react";
+import { ArrowRight, Globe, Lightbulb, Users, BookOpen, ChevronRight, Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import IdeaCard from "@/components/IdeaCard";
 import { ideas, communities } from "@/lib/data";
+import { fetchIdeasByField, fetchCommunities } from "@/lib/dataFetcher";
+import type { Idea, Community } from "@/lib/data";
 
 const HERO_IMG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663653558884/jGSmnnGcZQN8SuMzkeuwqq/hero-main-f2JuRgaA2k4zXCWzqPRigd.webp";
 const COLLAB_IMG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663653558884/jGSmnnGcZQN8SuMzkeuwqq/collab-section-7WSk4s9kkBGfStYP7fZ2SR.webp";
@@ -28,8 +31,34 @@ const disciplines = [
 ];
 
 export default function Home() {
-  const featuredIdeas = ideas.filter((i) => i.isFeatured).slice(0, 3);
-  const recentIdeas = ideas.filter((i) => !i.isFeatured).slice(0, 3);
+  const [featuredIdeas, setFeaturedIdeas] = useState<Idea[]>(ideas.filter((i) => i.isFeatured).slice(0, 3));
+  const [recentIdeas, setRecentIdeas] = useState<Idea[]>(ideas.filter((i) => !i.isFeatured).slice(0, 3));
+  const [displayCommunities, setDisplayCommunities] = useState<Community[]>(communities.slice(0, 4));
+  const [loading, setLoading] = useState(true);
+
+  // Load OpenAlex data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // Fetch trending ideas
+        const trendingIdeas = await fetchIdeasByField("Artificial Intelligence", 3);
+        if (trendingIdeas.length > 0) {
+          setFeaturedIdeas(trendingIdeas);
+        }
+
+        // Fetch communities
+        const fetchedCommunities = await fetchCommunities();
+        if (fetchedCommunities.length > 0) {
+          setDisplayCommunities(fetchedCommunities.slice(0, 4));
+        }
+      } catch (error) {
+        console.error("Error loading OpenAlex data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   return (
     <div style={{ fontFamily: "Manrope, sans-serif" }}>
@@ -161,6 +190,7 @@ export default function Home() {
             </Link>
           ))}
           <Link
+            key="more-disciplines"
             href="/feed"
             style={{
               padding: "6px 14px",
@@ -247,11 +277,17 @@ export default function Home() {
               background: "#f2f2f2",
             }}
           >
-            {featuredIdeas.map((idea, i) => (
-              <div key={idea.id} style={{ background: "#fff" }}>
-                <IdeaCard idea={idea} index={i} />
+            {loading ? (
+              <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "center", padding: "60px 0" }}>
+                <Loader2 className="animate-spin" size={32} />
               </div>
-            ))}
+            ) : (
+              featuredIdeas.map((idea, i) => (
+                <div key={idea.id} style={{ background: "#fff" }}>
+                  <IdeaCard idea={idea} index={i} />
+                </div>
+              ))
+            )}
           </div>
 
           <div className="md:hidden" style={{ marginTop: 24 }}>
@@ -520,7 +556,7 @@ export default function Home() {
               marginBottom: 32,
             }}
           >
-            {communities.slice(0, 4).map((community, i) => (
+            {displayCommunities.map((community, i) => (
               <Link
                 key={community.id}
                 href="/communities"
