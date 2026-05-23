@@ -1,16 +1,14 @@
-// Data Fetcher - Combines mock data with OpenAlex API data
-import { Idea, Researcher, Community } from "./data";
+// Data Fetcher — Combines mock data with live OpenAlex API data
+import type { Idea, Researcher, Community } from "./data";
 import {
-  fetchWorksByTopic,
   searchWorks,
-  fetchTopConcepts,
-  fetchAuthorsByTopic,
+  fetchTopTopics,
   mapWorkToIdea,
   mapAuthorToResearcher,
 } from "./openalex";
 
 // Cache for API results
-const cache: Record<string, { data: any; timestamp: number }> = {};
+const cache: Record<string, { data: unknown; timestamp: number }> = {};
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 function isCacheValid(key: string): boolean {
@@ -19,17 +17,37 @@ function isCacheValid(key: string): boolean {
   return Date.now() - cached.timestamp < CACHE_DURATION;
 }
 
-// Fetch ideas by field/topic
-export async function fetchIdeasByField(field: string, limit: number = 12): Promise<Idea[]> {
+// Hardcoded popular research fields as reliable fallback
+const FALLBACK_FIELDS = [
+  "All Fields",
+  "Machine Learning",
+  "Climate Change",
+  "Neuroscience",
+  "Quantum Computing",
+  "CRISPR Gene Editing",
+  "Natural Language Processing",
+  "Cancer Research",
+  "Renewable Energy",
+  "Robotics",
+  "Immunology",
+  "Materials Science",
+  "Astrophysics",
+  "Epidemiology",
+  "Computer Vision",
+];
+
+// Fetch ideas by field/topic — live from OpenAlex
+export async function fetchIdeasByField(field: string, limit: number = 20): Promise<Idea[]> {
   const cacheKey = `ideas-${field}-${limit}`;
 
   if (isCacheValid(cacheKey)) {
-    return cache[cacheKey].data;
+    return cache[cacheKey].data as Idea[];
   }
 
   try {
     const works = await searchWorks(field, limit);
-    const ideas = works.map((work, idx) => mapWorkToIdea(work, idx));
+    if (works.length === 0) return [];
+    const ideas = works.map((work, idx) => mapWorkToIdea(work, idx)) as Idea[];
     cache[cacheKey] = { data: ideas, timestamp: Date.now() };
     return ideas;
   } catch (error) {
@@ -43,18 +61,18 @@ export async function fetchResearchersByField(field: string, limit: number = 6):
   const cacheKey = `researchers-${field}-${limit}`;
 
   if (isCacheValid(cacheKey)) {
-    return cache[cacheKey].data;
+    return cache[cacheKey].data as Researcher[];
   }
 
   try {
-    // For now, we'll search for papers and extract authors
-    const works = await searchWorks(field, 5);
-    const researchers: Researcher[] = [];
+    const works = await searchWorks(field, 8);
+    const researcherMap = new Map<string, Researcher>();
 
     for (const work of works) {
       const mainAuthor = work.authorships?.[0];
-      if (mainAuthor) {
-        researchers.push(
+      if (mainAuthor && !researcherMap.has(mainAuthor.author.id)) {
+        researcherMap.set(
+          mainAuthor.author.id,
           mapAuthorToResearcher(
             {
               id: mainAuthor.author.id,
@@ -63,50 +81,50 @@ export async function fetchResearchersByField(field: string, limit: number = 6):
               cited_by_count: work.cited_by_count,
               last_known_institution: mainAuthor.institutions?.[0],
             },
-            researchers.length
-          )
+            researcherMap.size
+          ) as Researcher
         );
       }
     }
 
-    const sliced = researchers.slice(0, limit);
-    cache[cacheKey] = { data: sliced, timestamp: Date.now() };
-    return sliced;
+    const result = Array.from(researcherMap.values()).slice(0, limit);
+    cache[cacheKey] = { data: result, timestamp: Date.now() };
+    return result;
   } catch (error) {
     console.error("Error fetching researchers:", error);
     return [];
   }
 }
 
-// Fetch trending topics/fields
+// Fetch trending topics/fields from OpenAlex
 export async function fetchTrendingFields(): Promise<string[]> {
   const cacheKey = "trending-fields";
 
   if (isCacheValid(cacheKey)) {
-    return cache[cacheKey].data;
+    return cache[cacheKey].data as string[];
   }
 
   try {
-    const concepts = await fetchTopConcepts(15);
-    cache[cacheKey] = { data: concepts, timestamp: Date.now() };
-    return concepts;
+    const topics = await fetchTopTopics(20);
+    if (topics.length > 0) {
+      // Mix OpenAlex topics with our curated list for better coverage
+      const combined = Array.from(new Set([...FALLBACK_FIELDS.slice(1), ...topics.slice(0, 10)]));
+      cache[cacheKey] = { data: combined, timestamp: Date.now() };
+      return combined;
+    }
   } catch (error) {
     console.error("Error fetching trending fields:", error);
-    return [
-      "Artificial Intelligence",
-      "Climate Science",
-      "Quantum Computing",
-      "Neuroscience",
-      "Materials Science",
-    ];
   }
+
+  // Return curated fallback fields
+  return FALLBACK_FIELDS.slice(1);
 }
 
 // Search across ideas and researchers
 export async function globalSearch(query: string): Promise<{ ideas: Idea[]; researchers: Researcher[] }> {
   try {
     const works = await searchWorks(query, 20);
-    const ideas = works.map((work, idx) => mapWorkToIdea(work, idx));
+    const ideas = works.map((work, idx) => mapWorkToIdea(work, idx)) as Idea[];
 
     // Extract unique researchers from works
     const researcherMap = new Map<string, Researcher>();
@@ -124,7 +142,7 @@ export async function globalSearch(query: string): Promise<{ ideas: Idea[]; rese
               last_known_institution: mainAuthor.institutions?.[0],
             },
             researcherMap.size
-          )
+          ) as Researcher
         );
       }
     }
@@ -139,11 +157,11 @@ export async function globalSearch(query: string): Promise<{ ideas: Idea[]; rese
   }
 }
 
-// Create mock communities from trending fields
+// Create communities from trending fields
 export async function fetchCommunities(): Promise<Community[]> {
   try {
-    const fields = await fetchTrendingFields();
-    return fields.slice(0, 6).map((field, idx) => ({
+    const fieldList = await fetchTrendingFields();
+    return fieldList.slice(0, 6).map((field, idx) => ({
       id: `community-${idx}`,
       name: `${field} Research Network`,
       description: `A global community for researchers working in ${field}`,

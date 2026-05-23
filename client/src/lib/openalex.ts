@@ -1,5 +1,6 @@
 // OpenAlex API Integration
 // Fetches real research data to populate PhDNexus
+// API Key: r729JxsY6lr0m7bxXdYFLY
 
 const OPENALEX_API_KEY = "r729JxsY6lr0m7bxXdYFLY";
 const OPENALEX_BASE_URL = "https://api.openalex.org";
@@ -42,57 +43,38 @@ export interface OpenAlexAuthor {
   };
 }
 
-export interface OpenAlexConcept {
+export interface OpenAlexTopic {
   id: string;
   display_name: string;
   works_count: number;
-  cited_by_count: number;
 }
 
 // Reconstruct abstract from inverted index
-function reconstructAbstract(
+export function reconstructAbstract(
   invertedIndex?: Record<string, number[]>
 ): string {
-  if (!invertedIndex) return "";
+  if (!invertedIndex || Object.keys(invertedIndex).length === 0) return "";
 
-  const words = new Array(
-    Math.max(...Object.values(invertedIndex).flat(), 0) + 1
-  );
+  const maxPos = Math.max(...Object.values(invertedIndex).flat());
+  const words = new Array(maxPos + 1).fill("");
   Object.entries(invertedIndex).forEach(([word, positions]) => {
     positions.forEach((pos) => {
       words[pos] = word;
     });
   });
 
-  return words.filter(Boolean).join(" ").substring(0, 300);
+  return words.filter(Boolean).join(" ").substring(0, 400);
 }
 
-// Fetch works by topic/concept
-export async function fetchWorksByTopic(
-  topicId: string,
-  limit: number = 10
-): Promise<OpenAlexWork[]> {
-  try {
-    const response = await fetch(
-      `${OPENALEX_BASE_URL}/works?filter=topics.id:${topicId}&sort=-cited_by_count&per_page=${limit}&api_key=${OPENALEX_API_KEY}`
-    );
-    const data = await response.json();
-    return data.results || [];
-  } catch (error) {
-    console.error("Error fetching works by topic:", error);
-    return [];
-  }
-}
-
-// Fetch works by keyword search
+// Fetch works by keyword search — returns real papers from OpenAlex
 export async function searchWorks(
   query: string,
   limit: number = 20
 ): Promise<OpenAlexWork[]> {
   try {
-    const response = await fetch(
-      `${OPENALEX_BASE_URL}/works?search=${encodeURIComponent(query)}&sort=-cited_by_count&per_page=${limit}&api_key=${OPENALEX_API_KEY}`
-    );
+    const url = `${OPENALEX_BASE_URL}/works?search=${encodeURIComponent(query)}&sort=-cited_by_count&per_page=${limit}&select=id,title,abstract_inverted_index,publication_year,cited_by_count,authorships,primary_topic,topics,created_date&api_key=${OPENALEX_API_KEY}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     return data.results || [];
   } catch (error) {
@@ -101,33 +83,16 @@ export async function searchWorks(
   }
 }
 
-// Fetch top concepts/topics
-export async function fetchTopConcepts(limit: number = 15): Promise<string[]> {
+// Fetch top topics from OpenAlex (replaces deprecated /concepts endpoint)
+export async function fetchTopTopics(limit: number = 20): Promise<string[]> {
   try {
-    const response = await fetch(
-      `${OPENALEX_BASE_URL}/concepts?sort=-works_count&per_page=${limit}&api_key=${OPENALEX_API_KEY}`
-    );
+    const url = `${OPENALEX_BASE_URL}/topics?per_page=${limit}&api_key=${OPENALEX_API_KEY}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    return (data.results || []).map((c: OpenAlexConcept) => c.display_name);
+    return (data.results || []).map((t: OpenAlexTopic) => t.display_name);
   } catch (error) {
-    console.error("Error fetching concepts:", error);
-    return [];
-  }
-}
-
-// Fetch authors by topic
-export async function fetchAuthorsByTopic(
-  topicId: string,
-  limit: number = 10
-): Promise<OpenAlexAuthor[]> {
-  try {
-    const response = await fetch(
-      `${OPENALEX_BASE_URL}/authors?filter=topics.id:${topicId}&sort=-cited_by_count&per_page=${limit}&api_key=${OPENALEX_API_KEY}`
-    );
-    const data = await response.json();
-    return data.results || [];
-  } catch (error) {
-    console.error("Error fetching authors:", error);
+    console.error("Error fetching topics:", error);
     return [];
   }
 }
@@ -137,51 +102,53 @@ export function mapWorkToIdea(work: OpenAlexWork, index: number) {
   const abstract = reconstructAbstract(work.abstract_inverted_index);
   const mainAuthor = work.authorships?.[0];
   const institution = mainAuthor?.institutions?.[0];
+  const topicName = work.primary_topic?.display_name || "Multidisciplinary";
+  const tags = (work.topics || []).slice(0, 4).map((t) => t.display_name);
 
   return {
-    id: `oa-${index}`,
-    title: work.title,
-    abstract: abstract || "Research paper from OpenAlex",
-    field: work.primary_topic?.display_name || "Multidisciplinary",
-    subfield: work.topics?.[1]?.display_name || work.primary_topic?.display_name || "General Research",
-    tags: work.topics?.slice(0, 4).map((t) => t.display_name) || [],
+    id: `oa-${work.id.split("/").pop()}-${index}`,
+    title: work.title || "Untitled Research",
+    abstract: abstract || "Abstract not available for this paper.",
+    field: topicName,
+    subfield: work.topics?.[1]?.display_name || topicName,
+    tags: tags.length > 0 ? tags : [topicName],
     author: {
       id: mainAuthor?.author?.id || `author-${index}`,
       name: mainAuthor?.author?.display_name || "Anonymous Researcher",
       university: institution?.display_name || "Unknown Institution",
       country: institution?.country_code || "Unknown",
-      field: work.primary_topic?.display_name || "Research",
+      field: topicName,
       year: Math.max(1, 5 - (new Date().getFullYear() - (work.publication_year || 2020))),
       avatar: (mainAuthor?.author?.display_name || "AR")
         .split(" ")
-        .map((n) => n[0])
+        .map((n: string) => n[0])
         .join("")
         .toUpperCase()
         .substring(0, 2),
       avatarColor: ["#000000", "#333333", "#222222"][index % 3],
-      bio: `Published ${work.cited_by_count} cited works`,
+      bio: `${work.cited_by_count} citations`,
       ideas: work.cited_by_count,
       collaborators: Math.floor(work.cited_by_count / 10),
       citations: work.cited_by_count,
     },
     createdAt: work.created_date?.split("T")[0] || new Date().toISOString().split("T")[0],
     updatedAt: work.created_date?.split("T")[0] || new Date().toISOString().split("T")[0],
-    upvotes: Math.min(100, work.cited_by_count),
+    upvotes: Math.min(999, work.cited_by_count),
     comments: Math.floor(work.cited_by_count / 5),
     collaborators: Math.floor(work.cited_by_count / 20),
     status: "published" as const,
-    isNew: false,
+    isNew: (work.publication_year || 0) >= 2023,
     isFeatured: work.cited_by_count > 500,
     seekingCollaboration: work.cited_by_count < 100,
     methodology: "Peer-reviewed research",
-    researchQuestion: work.title,
+    researchQuestion: work.title || "",
   };
 }
 
 // Map OpenAlex author to PhDNexus Researcher
 export function mapAuthorToResearcher(author: OpenAlexAuthor, index: number) {
   return {
-    id: `oa-author-${index}`,
+    id: `oa-author-${author.id?.split("/").pop() || index}`,
     name: author.display_name,
     university: author.last_known_institution?.display_name || "Unknown Institution",
     country: author.last_known_institution?.country_code || "Unknown",
@@ -189,7 +156,7 @@ export function mapAuthorToResearcher(author: OpenAlexAuthor, index: number) {
     year: Math.floor(Math.random() * 4) + 1,
     avatar: author.display_name
       .split(" ")
-      .map((n) => n[0])
+      .map((n: string) => n[0])
       .join("")
       .toUpperCase()
       .substring(0, 2),
