@@ -141,11 +141,11 @@ export default function Home() {
                 animation: "fadeInUp 500ms cubic-bezier(0.23,1,0.32,1) 300ms forwards",
               }}
             >
-              <Link href="/feed" className="btn-primary">
+              <Link key="hero-explore" href="/feed" className="btn-primary">
                 Explore Ideas
                 <ArrowRight size={16} />
               </Link>
-              <Link href="/feed" className="btn-outline-light">
+              <Link key="hero-share" href="/feed?action=share" className="btn-outline-light">
                 Share Your Research
               </Link>
             </div>
@@ -159,10 +159,10 @@ export default function Home() {
                 animation: "fadeInUp 500ms cubic-bezier(0.23,1,0.32,1) 400ms forwards",
               }}
             >
-          {disciplines.slice(0, 8).map((d) => (
+          {disciplines.slice(0, 8).map((d, idx) => (
             <Link
-              key={d}
-              href="/feed"
+              key={`discipline-${idx}-${d}`}
+              href={`/feed?field=${encodeURIComponent(d)}`}
               style={{
                 padding: "6px 14px",
                 borderRadius: 46,
@@ -191,7 +191,7 @@ export default function Home() {
           ))}
           <Link
             key="more-disciplines"
-            href="/feed"
+            href="/feed?view=all-fields"
             style={{
               padding: "6px 14px",
                 borderRadius: 46,
@@ -262,7 +262,7 @@ export default function Home() {
                 AN IMPACT
               </h2>
             </div>
-            <Link href="/feed" className="btn-outline hidden md:inline-flex">
+            <Link key="featured-view-all-md" href="/feed" className="btn-outline hidden md:inline-flex">
               View All Ideas
               <ArrowRight size={16} />
             </Link>
@@ -291,7 +291,7 @@ export default function Home() {
           </div>
 
           <div className="md:hidden" style={{ marginTop: 24 }}>
-            <Link href="/feed" className="btn-outline" style={{ width: "100%", justifyContent: "center" }}>
+            <Link key="featured-view-all-mobile" href="/feed" className="btn-outline" style={{ width: "100%", justifyContent: "center" }}>
               View All Ideas
               <ArrowRight size={16} />
             </Link>
@@ -510,7 +510,7 @@ export default function Home() {
                 THIS WEEK
               </h2>
             </div>
-            <Link href="/feed" className="btn-outline hidden md:inline-flex">
+            <Link key="recent-browse-all" href="/feed" className="btn-outline hidden md:inline-flex">
               Browse All
               <ArrowRight size={16} />
             </Link>

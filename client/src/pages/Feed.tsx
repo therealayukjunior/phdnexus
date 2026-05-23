@@ -62,13 +62,19 @@ export default function Feed() {
       setLoading(true);
       const loadIdeas = async () => {
         try {
-          const openAlexIdeas = await fetchIdeasByField(selectedField, 12);
+          const openAlexIdeas = await fetchIdeasByField(selectedField, 20);
           if (openAlexIdeas.length > 0) {
-            setAllIdeas([...ideas, ...openAlexIdeas]);
+            // Replace with OpenAlex data, don't mix with mock data
+            setAllIdeas(openAlexIdeas);
+          } else {
+            // Fallback to mock data if OpenAlex returns nothing
+            setAllIdeas(ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField)));
           }
         } catch (error) {
           console.error("Error loading ideas:", error);
-          toast.error("Failed to load ideas");
+          toast.error("Failed to load ideas from OpenAlex");
+          // Fallback to mock data on error
+          setAllIdeas(ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField)));
         } finally {
           setLoading(false);
         }
@@ -83,8 +89,10 @@ export default function Feed() {
   const filtered = useMemo(() => {
     let result = [...allIdeas];
 
-    if (selectedField !== "All Fields") {
-      result = result.filter((i) => i.field === selectedField || i.subfield.includes(selectedField));
+    // Only apply field filter if we're not already filtered by field
+    // (since selectedField is already used to fetch the data)
+    if (selectedField !== "All Fields" && result.length === 0) {
+      result = ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField));
     }
 
     if (selectedStatus !== "all") {
