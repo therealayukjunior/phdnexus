@@ -1,11 +1,10 @@
 /*
  * PhDNexus Feed — Idea Browsing Page
  * Design: White catalogue mode with sub-nav pill filters
- * 3-column grid, discipline filters, status filters
- * Now powered by OpenAlex API for real research data
+ * Progressive loading: Papers appear as they're fetched from OpenAlex
  */
 import { useState, useMemo, useEffect } from "react";
-import { Search, SlidersHorizontal, Plus, Loader2 } from "lucide-react";
+import { Search, SlidersHorizontal, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -38,6 +37,7 @@ export default function Feed() {
   const [allIdeas, setAllIdeas] = useState<Idea[]>(ideas);
   const [loading, setLoading] = useState(false);
   const [availableFields, setAvailableFields] = useState(fields);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Load trending fields from OpenAlex on mount
   useEffect(() => {
@@ -45,7 +45,6 @@ export default function Feed() {
       try {
         const trendingFields = await fetchTrendingFields();
         if (trendingFields.length > 0) {
-          // Remove duplicates from trending fields
           const uniqueFields = Array.from(new Set(["All Fields", ...trendingFields]));
           setAvailableFields(uniqueFields);
         }
@@ -56,44 +55,49 @@ export default function Feed() {
     loadTrendingFields();
   }, []);
 
-  // Load ideas when field changes
+  // Progressive loading: Fetch papers and display them as they arrive
   useEffect(() => {
     if (selectedField !== "All Fields") {
       setLoading(true);
-      const loadIdeas = async () => {
+      setIsLoadingMore(true);
+      setAllIdeas([]); // Clear previous results
+      
+      const loadIdeasProgressively = async () => {
         try {
-          const openAlexIdeas = await fetchIdeasByField(selectedField, 20);
+          // Fetch papers from OpenAlex
+          const openAlexIdeas = await fetchIdeasByField(selectedField, 30);
+          
           if (openAlexIdeas.length > 0) {
-            // Replace with OpenAlex data, don't mix with mock data
-            setAllIdeas(openAlexIdeas);
+            // Display papers progressively (simulate streaming effect)
+            for (let i = 0; i < openAlexIdeas.length; i++) {
+              // Add papers one by one with a small delay for visual effect
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              setAllIdeas((prev) => [...prev, openAlexIdeas[i]]);
+            }
           } else {
-            // Fallback to mock data if OpenAlex returns nothing
-            setAllIdeas(ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField)));
+            toast.info("No papers found for this field");
+            setAllIdeas([]);
           }
         } catch (error) {
           console.error("Error loading ideas:", error);
-          toast.error("Failed to load ideas from OpenAlex");
-          // Fallback to mock data on error
-          setAllIdeas(ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField)));
+          toast.error("Failed to load papers from OpenAlex");
+          setAllIdeas([]);
         } finally {
           setLoading(false);
+          setIsLoadingMore(false);
         }
       };
-      loadIdeas();
+      
+      loadIdeasProgressively();
     } else {
       setAllIdeas(ideas);
       setLoading(false);
+      setIsLoadingMore(false);
     }
   }, [selectedField]);
 
   const filtered = useMemo(() => {
     let result = [...allIdeas];
-
-    // Only apply field filter if we're not already filtered by field
-    // (since selectedField is already used to fetch the data)
-    if (selectedField !== "All Fields" && result.length === 0) {
-      result = ideas.filter((i) => i.field === selectedField || i.subfield.includes(selectedField));
-    }
 
     if (selectedStatus !== "all") {
       result = result.filter((i) => i.status === selectedStatus);
@@ -125,7 +129,7 @@ export default function Feed() {
     }
 
     return result;
-  }, [allIdeas, selectedField, selectedStatus, showCollab, searchQuery, selectedSort]);
+  }, [allIdeas, selectedStatus, showCollab, searchQuery, selectedSort]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -138,7 +142,7 @@ export default function Feed() {
             Explore Research Ideas
           </h1>
           <p style={{ fontSize: 16, color: "rgba(255,255,255,0.72)" }}>
-            Discover cutting-edge research across all disciplines, powered by OpenAlex
+            Discover cutting-edge peer-reviewed research across all disciplines, powered by OpenAlex
           </p>
         </div>
       </section>
@@ -162,7 +166,7 @@ export default function Feed() {
               <Search size={18} color="#999999" />
               <input
                 type="text"
-                placeholder="Search ideas, topics, researchers..."
+                placeholder="Search papers, topics, researchers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -317,27 +321,32 @@ export default function Feed() {
         </div>
       </section>
 
-      {/* Ideas Grid */}
+      {/* Ideas Grid with Progressive Loading */}
       <section style={{ flex: 1, padding: "48px 0" }}>
         <div className="container">
-          {loading ? (
+          {loading && allIdeas.length === 0 ? (
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 400 }}>
-              <Loader2 className="animate-spin" size={32} />
+              <div style={{ textAlign: "center" }}>
+                <Loader2 className="animate-spin" size={32} style={{ marginBottom: 16, marginLeft: "auto", marginRight: "auto" }} />
+                <p style={{ fontSize: 14, color: "#666666" }}>Fetching papers from OpenAlex...</p>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: "center", padding: "60px 0" }}>
               <p style={{ fontSize: 18, fontWeight: 600, color: "#000000", marginBottom: 8 }}>
-                No ideas found
+                No papers found
               </p>
               <p style={{ fontSize: 14, color: "#999999" }}>
-                Try adjusting your filters or search query
+                Try selecting a different research field or adjusting your filters
               </p>
             </div>
           ) : (
             <>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#999999", marginBottom: 24, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                {filtered.length} Results
-              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "#999999", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {filtered.length} Results {isLoadingMore && <span style={{ marginLeft: 8 }}>• Loading more...</span>}
+                </p>
+              </div>
               <div
                 style={{
                   display: "grid",
@@ -346,9 +355,22 @@ export default function Feed() {
                 }}
               >
                 {filtered.map((idea) => (
-                  <IdeaCard key={idea.id} idea={idea} />
+                  <div
+                    key={idea.id}
+                    style={{
+                      animation: "fadeInUp 400ms cubic-bezier(0.23,1,0.32,1) forwards",
+                      opacity: 0,
+                    }}
+                  >
+                    <IdeaCard idea={idea} />
+                  </div>
                 ))}
               </div>
+              {isLoadingMore && (
+                <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
+                  <Loader2 className="animate-spin" size={24} />
+                </div>
+              )}
             </>
           )}
         </div>
